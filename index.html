@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WrenchWallet</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="page-shell">
+        <header class="hero">
+            <h1>Wrench Wallet</h1>
+            <p>Track vehicles, maintenance, reminders, and export your data in one place.</p>
+        </header>
+
+        <section class="panel">
+            <div class="panel-header">
+                <div>
+                    <h2>Vehicle Details</h2>
+                    <p>Save a vehicle with the details you need and keep maintenance history alongside it.</p>
+                </div>
+            </div>
+
+            <div class="form-grid">
+                <label>
+                    Nickname
+                    <input id="nicknameInput" type="text" placeholder="e.g. Daily Driver">
+                </label>
+                <label>
+                    Year *
+                    <input id="yearInput" type="number" min="1900" max="2100" placeholder="2025" required>
+                </label>
+                <label>
+                    Make *
+                    <input id="makeInput" type="text" placeholder="Toyota" required>
+                </label>
+                <label>
+                    Model *
+                    <input id="modelInput" type="text" placeholder="Corolla" required>
+                </label>
+                <label>
+                    Mileage *
+                    <input id="mileageInput" type="number" min="0" placeholder="12000" required>
+                </label>
+                <label>
+                    VIN
+                    <input id="vinInput" type="text" placeholder="Vehicle Identification Number">
+                </label>
+                <label>
+                    License Plate
+                    <input id="plateInput" type="text" placeholder="ABC-1234">
+                </label>
+                <label>
+                    Fuel Type
+                    <input id="fuelInput" type="text" placeholder="Gasoline, Diesel, EV">
+                </label>
+                <label>
+                    Engine Size
+                    <input id="engineInput" type="text" placeholder="2.0L I4">
+                </label>
+                <label>
+                    Purchase Date
+                    <input id="purchaseDateInput" type="date">
+                </label>
+                <label>
+                    Purchase Price
+                    <input id="purchasePriceInput" type="number" min="0" step="0.01" placeholder="25000">
+                </label>
+                <label>
+                    Insurance Expiry
+                    <input id="insuranceExpiryInput" type="date">
+                </label>
+                <label>
+                    Registration Expiry
+                    <input id="registrationExpiryInput" type="date">
+                </label>
+            </div>
+
+            <div class="form-actions">
+                <button id="saveVehicleBtn">Save Vehicle</button>
+                <button id="cancelEditBtn" class="secondary hidden">Cancel Edit</button>
+                <button id="exportJsonBtn" class="secondary">Export JSON</button>
+                <button id="exportCsvBtn" class="secondary">Export CSV</button>
+                <button id="clearAllBtn" class="secondary danger">Clear All Data</button>
+            </div>
+
+            <div id="formMessage" class="message"></div>
+        </section>
+
+        <section class="panel">
+            <div class="panel-header">
+                <div>
+                    <h2>Saved Vehicles</h2>
+                    <p>Your stored vehicles and service history appear below.</p>
+                </div>
+            </div>
+            <div id="vehicleDisplay" class="vehicle-list"></div>
+        </section>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>
