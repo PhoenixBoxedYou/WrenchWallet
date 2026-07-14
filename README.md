@@ -68,4 +68,3 @@ If you'd like, I can:
 - Add a migration button to the UI (so migration can be run without the console). (Already added)
 - Create a step-by-step screenshot guide.
 - Help push these changes to your GitHub repo or create a PR.
-

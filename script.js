@@ -25,6 +25,38 @@ const dashboardSummary = document.getElementById("dashboardSummary");
 const reminderList = document.getElementById("reminderList");
 const expenseList = document.getElementById("expenseList");
 
+// Debug panel elements and helpers
+const debugPanel = document.getElementById('debugPanel');
+function setDebugStatus(text) {
+    try {
+        if (debugPanel) {
+            const el = debugPanel.querySelector('.status');
+            if (el) el.textContent = text;
+            debugPanel.classList.remove('hidden');
+        }
+        console.log('[DEBUG] ' + text);
+    } catch (e) { /* ignore */ }
+}
+function setDebugError(err) {
+    try {
+        if (debugPanel) {
+            const el = debugPanel.querySelector('.error');
+            if (el) el.textContent = typeof err === 'string' ? err : (err && err.message ? err.message : String(err));
+            debugPanel.classList.remove('hidden');
+        }
+        console.error('[DEBUG ERROR]', err);
+    } catch (e) { /* ignore */ }
+}
+function updateDebugUser(user) {
+    try {
+        if (debugPanel) {
+            const el = debugPanel.querySelector('.user');
+            if (el) el.textContent = user ? `${user.email || 'unknown'} (${user.uid || 'no-uid'})` : 'none';
+            debugPanel.classList.remove('hidden');
+        }
+    } catch (e) { /* ignore */ }
+}
+
 let editVehicleId = null;
 let firebaseApp = null;
 let firebaseAuth = null;
@@ -35,10 +67,12 @@ let vehiclesUnsubscribe = null; // Firestore onSnapshot unsubscribe
 // Initialize Firebase if config is provided (firebase-config.js should set window.FIREBASE_CONFIG)
 function initFirebaseIfAvailable() {
     try {
+        setDebugStatus('Checking Firebase configuration...');
         if (window.FIREBASE_CONFIG) {
             firebaseApp = firebase.initializeApp(window.FIREBASE_CONFIG);
             firebaseAuth = firebase.auth();
             firebaseDb = firebase.firestore();
+            setDebugStatus('Firebase initialized');
 
             // Auth UI bindings
             document.getElementById('signupBtn').addEventListener('click', () => {
@@ -49,23 +83,23 @@ function initFirebaseIfAvailable() {
                     .then((cred) => {
                         if (cred && cred.user) {
                             cred.user.sendEmailVerification()
-                                .then(() => showMessage('Account created. Verification email sent. Please check your inbox.', 'success'))
-                                .catch(() => showMessage('Account created. Could not send verification email automatically.', 'info'));
+                                .then(() => { showMessage('Account created. Verification email sent. Please check your inbox.', 'success'); setDebugStatus('Verification email sent'); })
+                                .catch((e) => { showMessage('Account created. Could not send verification email automatically.', 'info'); setDebugError(e); });
                         }
                     })
-                    .catch((err) => showMessage(err.message, 'error'));
+                    .catch((err) => { showMessage(err.message, 'error'); setDebugError(err); });
             });
 
             document.getElementById('signinBtn').addEventListener('click', () => {
                 const email = document.getElementById('authEmail').value.trim();
                 const password = document.getElementById('authPassword').value;
                 if (!email || !password) { showMessage('Email and password are required to sign in.', 'error'); return; }
-                firebaseAuth.signInWithEmailAndPassword(email, password).catch((err) => showMessage(err.message, 'error'));
+                firebaseAuth.signInWithEmailAndPassword(email, password).catch((err) => { showMessage(err.message, 'error'); setDebugError(err); });
             });
 
             document.getElementById('googleSignInBtn').addEventListener('click', () => {
                 const provider = new firebase.auth.GoogleAuthProvider();
-                firebaseAuth.signInWithPopup(provider).catch((err) => showMessage(err.message, 'error'));
+                firebaseAuth.signInWithPopup(provider).catch((err) => { showMessage(err.message, 'error'); setDebugError(err); });
             });
 
             document.getElementById('signoutBtn').addEventListener('click', () => {
@@ -79,8 +113,8 @@ function initFirebaseIfAvailable() {
                     const email = (document.getElementById('authEmail') || {}).value || '';
                     if (!email) { showMessage('Enter your email address to send a password reset link.', 'error'); return; }
                     firebaseAuth.sendPasswordResetEmail(email)
-                        .then(() => showMessage('Password reset email sent. Check your inbox.', 'success'))
-                        .catch((err) => showMessage(err.message, 'error'));
+                        .then(() => { showMessage('Password reset email sent. Check your inbox.', 'success'); setDebugStatus('Password reset email sent'); })
+                        .catch((err) => { showMessage(err.message, 'error'); setDebugError(err); });
                 });
             }
 
@@ -89,8 +123,8 @@ function initFirebaseIfAvailable() {
                 resendVerifyBtn.addEventListener('click', () => {
                     if (!firebaseAuth.currentUser) { showMessage('No signed-in user to verify.', 'error'); return; }
                     firebaseAuth.currentUser.sendEmailVerification()
-                        .then(() => showMessage('Verification email sent. Check your inbox.', 'success'))
-                        .catch((err) => showMessage(err.message, 'error'));
+                        .then(() => { showMessage('Verification email sent. Check your inbox.', 'success'); setDebugStatus('Verification email resent'); })
+                        .catch((err) => { showMessage(err.message, 'error'); setDebugError(err); });
                 });
             }
 
@@ -114,6 +148,8 @@ function initFirebaseIfAvailable() {
                     signedOutPanel.style.display = 'none';
                     signedInPanel.style.display = 'flex';
                     userEmail.textContent = user.email || '';
+                    updateDebugUser(user);
+                    setDebugStatus('Signed in');
 
                     // Show protected panels
                     if (protectedNotice) protectedNotice.classList.add('hidden');
@@ -138,9 +174,11 @@ function initFirebaseIfAvailable() {
                             showMessage(`Loaded ${vehicles.length} vehicles from cloud`, 'success');
                         }, (err) => {
                             console.warn('Vehicle collection snapshot error', err);
+                            setDebugError(err);
                         });
                     } catch (err) {
                         console.error('Failed to attach vehicles listener', err);
+                        setDebugError(err);
                     }
                 } else {
                     signedOutPanel.style.display = 'block';
@@ -153,12 +191,15 @@ function initFirebaseIfAvailable() {
                     if (vehiclesPanel) vehiclesPanel.classList.add('hidden');
 
                     showMessage('Signed out. You can sign in to sync data across devices.', 'info');
+                    updateDebugUser(null);
+                    setDebugStatus('Signed out');
                     renderVehicles();
                 }
             });
         }
     } catch (err) {
         console.warn('Firebase init failed or not configured', err);
+        setDebugError(err);
     }
 }
 
@@ -1117,3 +1158,13 @@ if (migrateBtn) {
         }
     });
 }
+
+// Debug panel close button
+const debugCloseBtn = document.getElementById('debugCloseBtn');
+if (debugCloseBtn) {
+    debugCloseBtn.addEventListener('click', () => {
+        try { if (debugPanel) debugPanel.classList.add('hidden'); } catch (e) { }
+    });
+}
+
+setDebugStatus('Ready');
