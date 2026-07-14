@@ -21,6 +21,9 @@ const exportCsvButton = document.getElementById("exportCsvBtn");
 const clearAllButton = document.getElementById("clearAllBtn");
 const vehicleDisplay = document.getElementById("vehicleDisplay");
 const formMessage = document.getElementById("formMessage");
+const dashboardSummary = document.getElementById("dashboardSummary");
+const reminderList = document.getElementById("reminderList");
+const expenseList = document.getElementById("expenseList");
 
 let editVehicleId = null;
 
@@ -210,7 +213,7 @@ function createReminderSummary(vehicle) {
         const diff = Number(soonest.mileage) - Number(vehicle.mileage);
         if (diff <= 500) {
             status = "urgent";
-            parts.push(`${diff >= 0 ? diff + " miles away" : "overdue"}`);
+            parts.push(`(${diff >= 0 ? diff + " miles away" : "overdue"})`);
         }
     }
 
@@ -489,6 +492,209 @@ function attachMaintenanceHandlers(card, vehicle) {
     });
 }
 
+function escapeHtml(value) {
+    const safeValue = value === null || value === undefined ? "" : value;
+    return String(safeValue).replace(/[&<>"']/g, (char) => ({
+        "&": "&amp;",
+        "<": "&lt;",
+        ">": "&gt;",
+        '"': "&quot;",
+        "'": "&#39;"
+    }[char]));
+}
+
+function formatCurrency(value) {
+    return `$${Number(value || 0).toFixed(2)}`;
+}
+
+function getReminderState(vehicle, entry) {
+    const now = new Date();
+    let status = "scheduled";
+    let sortScore = Number.POSITIVE_INFINITY;
+
+    if (entry.nextDueDate) {
+        const dueDate = new Date(entry.nextDueDate);
+        if (!Number.isNaN(dueDate.getTime())) {
+            const days = Math.round((dueDate - now) / (1000 * 60 * 60 * 24));
+            if (days < 0) {
+                status = "overdue";
+                sortScore = days;
+            } else if (days <= 30) {
+                status = status === "overdue" ? "overdue" : "soon";
+                sortScore = days;
+            } else {
+                sortScore = Math.min(sortScore, days);
+            }
+        }
+    }
+
+    if (entry.nextDueMileage) {
+        const nextMileage = Number(entry.nextDueMileage);
+        const currentMileage = Number(vehicle.mileage) || 0;
+        const milesAway = nextMileage - currentMileage;
+        if (!Number.isNaN(nextMileage)) {
+            if (milesAway <= 0) {
+                status = "overdue";
+                sortScore = Math.min(sortScore, milesAway);
+            } else if (milesAway <= 500) {
+                status = status === "overdue" ? "overdue" : "soon";
+                sortScore = Math.min(sortScore, milesAway);
+            } else {
+                sortScore = Math.min(sortScore, milesAway);
+            }
+        }
+    }
+
+    return { status, sortScore };
+}
+
+function collectReminderEntries(vehicles) {
+    const reminderEntries = [];
+
+    vehicles.forEach((vehicle) => {
+        vehicle.maintenance.forEach((entry) => {
+            if (!entry.nextDueDate && !entry.nextDueMileage) {
+                return;
+            }
+
+            const state = getReminderState(vehicle, entry);
+            const parts = [];
+            if (entry.nextDueDate) {
+                parts.push(`Due ${formatDateString(entry.nextDueDate)}`);
+            }
+            if (entry.nextDueMileage) {
+                parts.push(`${entry.nextDueMileage} miles`);
+            }
+
+            reminderEntries.push({
+                ...state,
+                vehicle,
+                entry,
+                vehicleName: vehicle.nickname || `${vehicle.year} ${vehicle.make} ${vehicle.model}`,
+                detail: parts.join(" • "),
+                label: entry.serviceType || "Maintenance"
+            });
+        });
+    });
+
+    return reminderEntries.sort((a, b) => {
+        const severity = { overdue: 0, soon: 1, scheduled: 2 };
+        return severity[a.status] - severity[b.status] || a.sortScore - b.sortScore || a.vehicleName.localeCompare(b.vehicleName);
+    });
+}
+
+function summarizeExpenses(vehicles) {
+    const totalSpend = vehicles.reduce((accumulator, vehicle) => accumulator + vehicle.maintenance.reduce((sum, entry) => sum + Number(entry.cost || 0), 0), 0);
+    const byVehicle = vehicles
+        .map((vehicle) => ({
+            id: vehicle.id,
+            name: vehicle.nickname || `${vehicle.year} ${vehicle.make} ${vehicle.model}`,
+            total: vehicle.maintenance.reduce((sum, entry) => sum + Number(entry.cost || 0), 0),
+            count: vehicle.maintenance.length
+        }))
+        .filter((vehicle) => vehicle.total > 0 || vehicle.count > 0)
+        .sort((a, b) => b.total - a.total);
+
+    const monthlyTotals = new Map();
+    vehicles.forEach((vehicle) => {
+        vehicle.maintenance.forEach((entry) => {
+            if (!entry.date) {
+                return;
+            }
+            const date = new Date(entry.date);
+            if (Number.isNaN(date.getTime())) {
+                return;
+            }
+            const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+            monthlyTotals.set(monthKey, (monthlyTotals.get(monthKey) || 0) + Number(entry.cost || 0));
+        });
+    });
+
+    const months = Array.from(monthlyTotals.entries())
+        .sort(([left], [right]) => left.localeCompare(right))
+        .slice(-6)
+        .map(([monthKey, amount]) => ({
+            label: new Date(`${monthKey}-01`).toLocaleDateString(undefined, { month: "short", year: "numeric" }),
+            amount
+        }));
+
+    return { totalSpend, byVehicle, months };
+}
+
+function renderDashboard(vehicles) {
+    const reminderEntries = collectReminderEntries(vehicles);
+    const overdueCount = reminderEntries.filter((entry) => entry.status === "overdue").length;
+    const soonCount = reminderEntries.filter((entry) => entry.status === "soon").length;
+    const { totalSpend, byVehicle, months } = summarizeExpenses(vehicles);
+
+    dashboardSummary.innerHTML = `
+        <div class="dashboard-card">
+            <span class="muted">Vehicles</span>
+            <div class="value">${vehicles.length}</div>
+        </div>
+        <div class="dashboard-card">
+            <span class="muted">Overdue reminders</span>
+            <div class="value">${overdueCount}</div>
+        </div>
+        <div class="dashboard-card">
+            <span class="muted">Upcoming reminders</span>
+            <div class="value">${soonCount}</div>
+        </div>
+        <div class="dashboard-card">
+            <span class="muted">Total spend</span>
+            <div class="value">${formatCurrency(totalSpend)}</div>
+        </div>
+    `;
+
+    reminderList.innerHTML = reminderEntries.length
+        ? reminderEntries.map((entry) => `
+            <div class="dashboard-item ${entry.status}">
+                <div class="dashboard-item-header">
+                    <div>
+                        <strong>${escapeHtml(entry.label)}</strong>
+                        <p>${escapeHtml(entry.vehicleName)}</p>
+                    </div>
+                    <span class="dashboard-pill">${entry.status === "overdue" ? "Overdue" : entry.status === "soon" ? "Soon" : "Scheduled"}</span>
+                </div>
+                <p>${escapeHtml(entry.detail)}</p>
+            </div>
+        `).join("")
+        : '<div class="dashboard-item"><p>No service reminders are set yet.</p></div>';
+
+    expenseList.innerHTML = `
+        <div class="dashboard-item">
+            <div class="dashboard-item-header">
+                <div>
+                    <strong>Total maintenance spend</strong>
+                    <p>${formatCurrency(totalSpend)}</p>
+                </div>
+                <span class="dashboard-pill">${vehicles.length} vehicles</span>
+            </div>
+        </div>
+        ${byVehicle.length ? byVehicle.map((vehicle) => `
+            <div class="dashboard-item">
+                <div class="dashboard-item-header">
+                    <div>
+                        <strong>${escapeHtml(vehicle.name)}</strong>
+                        <p>${vehicle.count} service record${vehicle.count === 1 ? "" : "s"}</p>
+                    </div>
+                    <span class="dashboard-pill">${formatCurrency(vehicle.total)}</span>
+                </div>
+            </div>
+        `).join("") : '<div class="dashboard-item"><p>No maintenance costs recorded yet.</p></div>'}
+        ${months.length ? `
+            <div class="dashboard-item">
+                <div class="dashboard-item-header">
+                    <div>
+                        <strong>Recent monthly spend</strong>
+                        <p>${months.map((month) => `${month.label}: ${formatCurrency(month.amount)}`).join(" • ")}</p>
+                    </div>
+                </div>
+            </div>
+        ` : ""}
+    `;
+}
+
 function renderVehicles() {
     const vehicles = loadVehicles();
     vehicleDisplay.innerHTML = "";
@@ -500,12 +706,15 @@ function renderVehicles() {
             <p>Enter a vehicle above to begin tracking your fleet and maintenance history.</p>
         `;
         vehicleDisplay.appendChild(emptyState);
+        renderDashboard(vehicles);
         return;
     }
 
     vehicles.forEach((vehicle, index) => {
         vehicleDisplay.appendChild(buildVehicleCard(vehicle, index));
     });
+
+    renderDashboard(vehicles);
 }
 
 function populateFormForEdit(vehicleId) {

@@ -341,6 +341,92 @@ textarea {
     margin: 0 0 12px;
 }
 
+.dashboard-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 16px;
+    margin-bottom: 20px;
+}
+
+.dashboard-card,
+.dashboard-item {
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 18px;
+    padding: 16px;
+}
+
+.dashboard-card .value {
+    margin-top: 6px;
+    font-size: 1.5rem;
+    font-weight: 700;
+}
+
+.dashboard-section {
+    margin-top: 20px;
+}
+
+.dashboard-section h3 {
+    margin: 0 0 12px;
+    font-size: 1.15rem;
+}
+
+.dashboard-list {
+    display: grid;
+    gap: 12px;
+}
+
+.dashboard-item {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.dashboard-item-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+}
+
+.dashboard-item strong {
+    display: block;
+    margin-bottom: 2px;
+}
+
+.dashboard-item p {
+    margin: 0;
+    color: var(--text-muted);
+}
+
+.dashboard-item.urgent {
+    border-color: rgba(255, 107, 107, 0.25);
+    background: rgba(255, 107, 107, 0.08);
+}
+
+.dashboard-item.soon {
+    border-color: rgba(0, 173, 181, 0.25);
+    background: rgba(0, 173, 181, 0.08);
+}
+
+.dashboard-item.overdue {
+    border-color: rgba(255, 107, 107, 0.35);
+    background: rgba(255, 107, 107, 0.14);
+}
+
+.dashboard-pill {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 6px 10px;
+    border-radius: 999px;
+    font-size: 0.8rem;
+    font-weight: 600;
+    white-space: nowrap;
+    background: rgba(255, 255, 255, 0.08);
+    color: var(--text);
+}
+
 @media (max-width: 900px) {
     .form-grid,
     .form-grid.small-grid,
