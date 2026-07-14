@@ -20,10 +20,13 @@
                         <input id="authPassword" type="password" placeholder="password" style="padding:8px;border-radius:8px;border:1px solid rgba(255,255,255,0.08);margin-right:8px;">
                         <button id="signupBtn" class="button secondary" style="padding:8px 12px;margin-right:6px;">Sign up</button>
                         <button id="signinBtn" class="button" style="padding:8px 12px;margin-right:6px;">Sign in</button>
-                        <button id="googleSignInBtn" class="button secondary" style="padding:8px 12px;">Sign in with Google</button>
+                        <button id="googleSignInBtn" class="button secondary" style="padding:8px 12px;margin-right:6px;">Sign in with Google</button>
+                        <button id="resetPasswordBtn" class="button tertiary" style="padding:8px 12px;">Forgot password</button>
                     </div>
                     <div id="signedInPanel" style="display:none;align-items:center;gap:8px;">
                         <span id="userEmail" style="color:var(--text-muted);margin-right:8px;"></span>
+                        <span id="emailVerifiedBadge" style="margin-right:8px;color:var(--accent);font-weight:600"></span>
+                        <button id="resendVerifyBtn" class="button secondary hidden" style="padding:6px 8px;margin-right:6px;">Resend verification</button>
                         <button id="signoutBtn" class="button secondary">Sign out</button>
                     </div>
                 </div>
@@ -99,13 +102,23 @@
                 <button id="cancelEditBtn" class="secondary hidden">Cancel Edit</button>
                 <button id="exportJsonBtn" class="secondary">Export JSON</button>
                 <button id="exportCsvBtn" class="secondary">Export CSV</button>
+                <button id="migrateBtn" class="secondary" title="Migrate legacy users/{uid}.vehicles array to subcollection">Migrate legacy data</button>
                 <button id="clearAllBtn" class="secondary danger">Clear All Data</button>
             </div>
 
             <div id="formMessage" class="message"></div>
         </section>
 
-        <section class="panel">
+        <div id="protectedNotice" class="panel hidden">
+            <div class="panel-header">
+                <div>
+                    <h2>Sign in to view your dashboard</h2>
+                    <p>Please sign in to access your maintenance dashboard and saved vehicles. Your data will sync across devices when signed in.</p>
+                </div>
+            </div>
+        </div>
+
+        <section id="dashboardPanel" class="panel">
             <div class="panel-header">
                 <div>
                     <h2>Maintenance Dashboard</h2>
@@ -123,7 +136,7 @@
             </div>
         </section>
 
-        <section class="panel">
+        <section id="vehiclesPanel" class="panel">
             <div class="panel-header">
                 <div>
                     <h2>Saved Vehicles</h2>
