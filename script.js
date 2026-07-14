@@ -26,6 +26,83 @@ const reminderList = document.getElementById("reminderList");
 const expenseList = document.getElementById("expenseList");
 
 let editVehicleId = null;
+let firebaseApp = null;
+let firebaseAuth = null;
+let firebaseDb = null;
+let currentUser = null;
+
+// Initialize Firebase if config is provided (firebase-config.js should set window.FIREBASE_CONFIG)
+function initFirebaseIfAvailable() {
+    try {
+        if (window.FIREBASE_CONFIG) {
+            firebaseApp = firebase.initializeApp(window.FIREBASE_CONFIG);
+            firebaseAuth = firebase.auth();
+            firebaseDb = firebase.firestore();
+
+            // Auth UI bindings
+            document.getElementById('signupBtn').addEventListener('click', () => {
+                const email = document.getElementById('authEmail').value.trim();
+                const password = document.getElementById('authPassword').value;
+                if (!email || !password) { showMessage('Email and password are required to sign up.', 'error'); return; }
+                firebaseAuth.createUserWithEmailAndPassword(email, password).catch((err) => showMessage(err.message, 'error'));
+            });
+
+            document.getElementById('signinBtn').addEventListener('click', () => {
+                const email = document.getElementById('authEmail').value.trim();
+                const password = document.getElementById('authPassword').value;
+                if (!email || !password) { showMessage('Email and password are required to sign in.', 'error'); return; }
+                firebaseAuth.signInWithEmailAndPassword(email, password).catch((err) => showMessage(err.message, 'error'));
+            });
+
+            document.getElementById('googleSignInBtn').addEventListener('click', () => {
+                const provider = new firebase.auth.GoogleAuthProvider();
+                firebaseAuth.signInWithPopup(provider).catch((err) => showMessage(err.message, 'error'));
+            });
+
+            document.getElementById('signoutBtn').addEventListener('click', () => {
+                firebaseAuth.signOut();
+            });
+
+            firebaseAuth.onAuthStateChanged(async (user) => {
+                currentUser = user;
+                const signedInPanel = document.getElementById('signedInPanel');
+                const signedOutPanel = document.getElementById('signedOutPanel');
+                const userEmail = document.getElementById('userEmail');
+
+                if (user) {
+                    signedOutPanel.style.display = 'none';
+                    signedInPanel.style.display = 'flex';
+                    userEmail.textContent = user.email;
+
+                    // Load user data from Firestore (users/{uid} doc with vehicles array)
+                    try {
+                        const doc = await firebaseDb.collection('users').doc(user.uid).get();
+                        if (doc.exists && doc.data().vehicles) {
+                            localStorage.setItem('vehicles', JSON.stringify(doc.data().vehicles));
+                        }
+                        renderVehicles();
+                        showMessage(`Signed in as ${user.email}`, 'success');
+                    } catch (err) {
+                        console.error('Failed to load Firestore data', err);
+                    }
+                } else {
+                    signedOutPanel.style.display = 'block';
+                    signedInPanel.style.display = 'none';
+                    userEmail.textContent = '';
+                    showMessage('Signed out. You can sign in to sync data across devices.', 'info');
+                    renderVehicles();
+                }
+            });
+        }
+    } catch (err) {
+        console.warn('Firebase init failed or not configured', err);
+    }
+}
+
+// Attempt init on load
+window.addEventListener('load', () => {
+    initFirebaseIfAvailable();
+});
 
 function loadVehicles() {
     const stored = localStorage.getItem("vehicles");
@@ -61,7 +138,19 @@ function loadVehicles() {
 }
 
 function saveVehicles(vehicles) {
+    // Always keep a local copy
     localStorage.setItem("vehicles", JSON.stringify(vehicles));
+
+    // If user is signed in, persist to Firestore as well
+    if (firebaseDb && currentUser) {
+        try {
+            firebaseDb.collection('users').doc(currentUser.uid).set({ vehicles })
+                .then(() => console.log('Vehicles saved to Firestore'))
+                .catch((err) => console.warn('Failed to save vehicles to Firestore', err));
+        } catch (err) {
+            console.warn('Firestore save error', err);
+        }
+    }
 }
 
 function formatDateString(value) {
@@ -631,19 +720,19 @@ function renderDashboard(vehicles) {
         <div class="dashboard-card">
             <span class="muted">Vehicles</span>
             <div class="value">${vehicles.length}</div>
-        </div>
+        }</div>
         <div class="dashboard-card">
             <span class="muted">Overdue reminders</span>
             <div class="value">${overdueCount}</div>
-        </div>
+        }</div>
         <div class="dashboard-card">
             <span class="muted">Upcoming reminders</span>
             <div class="value">${soonCount}</div>
-        </div>
+        }</div>
         <div class="dashboard-card">
             <span class="muted">Total spend</span>
             <div class="value">${formatCurrency(totalSpend)}</div>
-        </div>
+        }</div>
     `;
 
     reminderList.innerHTML = reminderEntries.length
