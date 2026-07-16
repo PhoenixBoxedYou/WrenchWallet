@@ -27,12 +27,32 @@ const expenseList = document.getElementById("expenseList");
 
 // Debug panel elements and helpers
 const debugPanel = document.getElementById('debugPanel');
+// Only show debug panel in development contexts:
+// - window.DEBUG === true
+// - running on localhost/127.0.0.1/0.0.0.0/[::1]
+// - url query param `?debug=1` or `?debug=true`
+// - localStorage 'wrench_debug' === '1'
+function isDevMode() {
+    try {
+        if (window.DEBUG === true) return true;
+        const hostname = window.location.hostname || '';
+        const isLocalhost = ['localhost', '127.0.0.1', '0.0.0.0', '[::1]'].includes(hostname);
+        if (isLocalhost) return true;
+        const params = new URLSearchParams(window.location.search || '');
+        const p = params.get('debug');
+        if (p === '1' || p === 'true') return true;
+        if (localStorage.getItem('wrench_debug') === '1') return true;
+        return false;
+    } catch (e) {
+        return false;
+    }
+}
 function setDebugStatus(text) {
     try {
         if (debugPanel) {
             const el = debugPanel.querySelector('.status');
             if (el) el.textContent = text;
-            debugPanel.classList.remove('hidden');
+            if (isDevMode()) debugPanel.classList.remove('hidden');
         }
         console.log('[DEBUG] ' + text);
     } catch (e) { /* ignore */ }
@@ -42,7 +62,7 @@ function setDebugError(err) {
         if (debugPanel) {
             const el = debugPanel.querySelector('.error');
             if (el) el.textContent = typeof err === 'string' ? err : (err && err.message ? err.message : String(err));
-            debugPanel.classList.remove('hidden');
+            if (isDevMode()) debugPanel.classList.remove('hidden');
         }
         console.error('[DEBUG ERROR]', err);
     } catch (e) { /* ignore */ }
@@ -52,7 +72,7 @@ function updateDebugUser(user) {
         if (debugPanel) {
             const el = debugPanel.querySelector('.user');
             if (el) el.textContent = user ? `${user.email || 'unknown'} (${user.uid || 'no-uid'})` : 'none';
-            debugPanel.classList.remove('hidden');
+            if (isDevMode()) debugPanel.classList.remove('hidden');
         }
     } catch (e) { /* ignore */ }
 }
@@ -64,18 +84,58 @@ let firebaseDb = null;
 let currentUser = null;
 let vehiclesUnsubscribe = null; // Firestore onSnapshot unsubscribe
 
+function isFirebaseAuthSupportedContext() {
+    const protocol = window.location.protocol;
+    const hostname = window.location.hostname;
+    const isLocalhost = ['localhost', '127.0.0.1', '0.0.0.0', '[::1]'].includes(hostname);
+    return protocol === 'https:' || (protocol === 'http:' && isLocalhost);
+}
+
+function showAuthSetupError(message) {
+    showMessage(message, 'error');
+    setDebugError(message);
+}
+
+function getAuthErrorMessage(err) {
+    if (!err) return 'Unknown authentication error.';
+    if (err.code === 'auth/unauthorized-domain') {
+        return 'This domain is not authorized in Firebase Authentication. Add your current site host in Firebase Console → Authentication → Settings → Authorized domains.';
+    }
+    return err.message || String(err);
+}
+
+function buildFirebaseConfig() {
+    const config = Object.assign({}, window.FIREBASE_CONFIG);
+    const hostname = window.location.hostname;
+    const isLocalhost = ['localhost', '127.0.0.1', '0.0.0.0', '[::1]'].includes(hostname);
+    config.authDomain = isLocalhost ? 'localhost' : (hostname || config.authDomain);
+    return config;
+}
+
 // Initialize Firebase if config is provided (firebase-config.js should set window.FIREBASE_CONFIG)
 function initFirebaseIfAvailable() {
     try {
         setDebugStatus('Checking Firebase configuration...');
-        if (window.FIREBASE_CONFIG) {
-            firebaseApp = firebase.initializeApp(window.FIREBASE_CONFIG);
-            firebaseAuth = firebase.auth();
-            firebaseDb = firebase.firestore();
-            setDebugStatus('Firebase initialized');
+        if (!window.FIREBASE_CONFIG) {
+            showAuthSetupError('Firebase config not found. Create firebase-config.js from firebase-config.example.js and reload the page.');
+            return;
+        }
 
-            // Auth UI bindings
-            document.getElementById('signupBtn').addEventListener('click', () => {
+        if (!isFirebaseAuthSupportedContext()) {
+            showAuthSetupError('Firebase Auth requires a secure context. Open the app through http://localhost, http://127.0.0.1, or https:// instead of file://.');
+            return;
+        }
+
+        const firebaseConfig = buildFirebaseConfig();
+        firebaseApp = firebase.initializeApp(firebaseConfig);
+        firebaseAuth = firebase.auth();
+        firebaseDb = firebase.firestore();
+        setDebugStatus('Firebase initialized');
+
+        // Auth UI bindings
+        const signupBtn = document.getElementById('signupBtn');
+        if (signupBtn) {
+            signupBtn.addEventListener('click', () => {
                 const email = document.getElementById('authEmail').value.trim();
                 const password = document.getElementById('authPassword').value;
                 if (!email || !password) { showMessage('Email and password are required to sign up.', 'error'); return; }
@@ -87,116 +147,133 @@ function initFirebaseIfAvailable() {
                                 .catch((e) => { showMessage('Account created. Could not send verification email automatically.', 'info'); setDebugError(e); });
                         }
                     })
-                    .catch((err) => { showMessage(err.message, 'error'); setDebugError(err); });
+                    .catch((err) => { showMessage(getAuthErrorMessage(err), 'error'); setDebugError(err); });
             });
+        }
 
-            document.getElementById('signinBtn').addEventListener('click', () => {
+        const signinBtn = document.getElementById('signinBtn');
+        if (signinBtn) {
+            signinBtn.addEventListener('click', () => {
                 const email = document.getElementById('authEmail').value.trim();
                 const password = document.getElementById('authPassword').value;
                 if (!email || !password) { showMessage('Email and password are required to sign in.', 'error'); return; }
-                firebaseAuth.signInWithEmailAndPassword(email, password).catch((err) => { showMessage(err.message, 'error'); setDebugError(err); });
-            });
-
-            document.getElementById('googleSignInBtn').addEventListener('click', () => {
-                const provider = new firebase.auth.GoogleAuthProvider();
-                firebaseAuth.signInWithPopup(provider).catch((err) => { showMessage(err.message, 'error'); setDebugError(err); });
-            });
-
-            document.getElementById('signoutBtn').addEventListener('click', () => {
-                firebaseAuth.signOut();
-            });
-
-            // Password reset UI
-            const resetBtn = document.getElementById('resetPasswordBtn');
-            if (resetBtn) {
-                resetBtn.addEventListener('click', () => {
-                    const email = (document.getElementById('authEmail') || {}).value || '';
-                    if (!email) { showMessage('Enter your email address to send a password reset link.', 'error'); return; }
-                    firebaseAuth.sendPasswordResetEmail(email)
-                        .then(() => { showMessage('Password reset email sent. Check your inbox.', 'success'); setDebugStatus('Password reset email sent'); })
-                        .catch((err) => { showMessage(err.message, 'error'); setDebugError(err); });
-                });
-            }
-
-            const resendVerifyBtn = document.getElementById('resendVerifyBtn');
-            if (resendVerifyBtn) {
-                resendVerifyBtn.addEventListener('click', () => {
-                    if (!firebaseAuth.currentUser) { showMessage('No signed-in user to verify.', 'error'); return; }
-                    firebaseAuth.currentUser.sendEmailVerification()
-                        .then(() => { showMessage('Verification email sent. Check your inbox.', 'success'); setDebugStatus('Verification email resent'); })
-                        .catch((err) => { showMessage(err.message, 'error'); setDebugError(err); });
-                });
-            }
-
-            firebaseAuth.onAuthStateChanged(async (user) => {
-                currentUser = user;
-                const signedInPanel = document.getElementById('signedInPanel');
-                const signedOutPanel = document.getElementById('signedOutPanel');
-                const userEmail = document.getElementById('userEmail');
-                const emailVerifiedBadge = document.getElementById('emailVerifiedBadge');
-                const protectedNotice = document.getElementById('protectedNotice');
-                const dashboardPanel = document.getElementById('dashboardPanel');
-                const vehiclesPanel = document.getElementById('vehiclesPanel');
-
-                // Clean up previous listener if present
-                if (vehiclesUnsubscribe) {
-                    try { vehiclesUnsubscribe(); } catch (e) { /* ignore */ }
-                    vehiclesUnsubscribe = null;
-                }
-
-                if (user) {
-                    signedOutPanel.style.display = 'none';
-                    signedInPanel.style.display = 'flex';
-                    userEmail.textContent = user.email || '';
-                    updateDebugUser(user);
-                    setDebugStatus('Signed in');
-
-                    // Show protected panels
-                    if (protectedNotice) protectedNotice.classList.add('hidden');
-                    if (dashboardPanel) dashboardPanel.classList.remove('hidden');
-                    if (vehiclesPanel) vehiclesPanel.classList.remove('hidden');
-
-                    // Show email verification status
-                    if (emailVerifiedBadge) {
-                        emailVerifiedBadge.textContent = user.emailVerified ? 'Email verified' : 'Unverified email';
-                    }
-                    if (resendVerifyBtn) {
-                        if (user.emailVerified) { resendVerifyBtn.classList.add('hidden'); } else { resendVerifyBtn.classList.remove('hidden'); }
-                    }
-
-                    // Real-time listener: read vehicles from users/{uid}/vehicles subcollection
-                    try {
-                        const collectionRef = firebaseDb.collection('users').doc(user.uid).collection('vehicles');
-                        vehiclesUnsubscribe = collectionRef.onSnapshot((snapshot) => {
-                            const vehicles = snapshot.docs.map((d) => ({ id: d.id, ...d.data() }));
-                            localStorage.setItem('vehicles', JSON.stringify(vehicles));
-                            renderVehicles();
-                            showMessage(`Loaded ${vehicles.length} vehicles from cloud`, 'success');
-                        }, (err) => {
-                            console.warn('Vehicle collection snapshot error', err);
-                            setDebugError(err);
-                        });
-                    } catch (err) {
-                        console.error('Failed to attach vehicles listener', err);
-                        setDebugError(err);
-                    }
-                } else {
-                    signedOutPanel.style.display = 'block';
-                    signedInPanel.style.display = 'none';
-                    userEmail.textContent = '';
-
-                    // Hide protected panels
-                    if (protectedNotice) protectedNotice.classList.remove('hidden');
-                    if (dashboardPanel) dashboardPanel.classList.add('hidden');
-                    if (vehiclesPanel) vehiclesPanel.classList.add('hidden');
-
-                    showMessage('Signed out. You can sign in to sync data across devices.', 'info');
-                    updateDebugUser(null);
-                    setDebugStatus('Signed out');
-                    renderVehicles();
-                }
+                firebaseAuth.signInWithEmailAndPassword(email, password).catch((err) => { showMessage(getAuthErrorMessage(err), 'error'); setDebugError(err); });
             });
         }
+
+        const googleSignInBtn = document.getElementById('googleSignInBtn');
+        if (googleSignInBtn) {
+            googleSignInBtn.addEventListener('click', () => {
+                const provider = new firebase.auth.GoogleAuthProvider();
+                firebaseAuth.signInWithPopup(provider).catch((err) => { showMessage(getAuthErrorMessage(err), 'error'); setDebugError(err); });
+            });
+        }
+
+        const signoutBtn = document.getElementById('signoutBtn');
+        if (signoutBtn) {
+            signoutBtn.addEventListener('click', () => {
+                firebaseAuth.signOut();
+            });
+        }
+
+        const resetBtn = document.getElementById('resetPasswordBtn');
+        if (resetBtn) {
+            resetBtn.addEventListener('click', () => {
+                const email = (document.getElementById('authEmail') || {}).value || '';
+                if (!email) { showMessage('Enter your email address to send a password reset link.', 'error'); return; }
+                firebaseAuth.sendPasswordResetEmail(email)
+                    .then(() => { showMessage('Password reset email sent. Check your inbox.', 'success'); setDebugStatus('Password reset email sent'); })
+                    .catch((err) => { showMessage(getAuthErrorMessage(err), 'error'); setDebugError(err); });
+            });
+        }
+
+        const resendVerifyBtn = document.getElementById('resendVerifyBtn');
+        if (resendVerifyBtn) {
+            resendVerifyBtn.addEventListener('click', () => {
+                if (!firebaseAuth.currentUser) { showMessage('No signed-in user to verify.', 'error'); return; }
+                firebaseAuth.currentUser.sendEmailVerification()
+                    .then(() => { showMessage('Verification email sent. Check your inbox.', 'success'); setDebugStatus('Verification email resent'); })
+                    .catch((err) => { showMessage(getAuthErrorMessage(err), 'error'); setDebugError(err); });
+            });
+        }
+
+        firebaseAuth.onAuthStateChanged(async (user) => {
+            currentUser = user;
+            const signedInPanel = document.getElementById('signedInPanel');
+            const signedOutPanel = document.getElementById('signedOutPanel');
+            const userEmail = document.getElementById('userEmail');
+            const emailVerifiedBadge = document.getElementById('emailVerifiedBadge');
+            const protectedNotice = document.getElementById('protectedNotice');
+            const dashboardPanel = document.getElementById('dashboardPanel');
+            const vehiclesPanel = document.getElementById('vehiclesPanel');
+
+            if (vehiclesUnsubscribe) {
+                try { vehiclesUnsubscribe(); } catch (e) { /* ignore */ }
+                vehiclesUnsubscribe = null;
+            }
+
+            if (user) {
+                signedOutPanel.style.display = 'none';
+                signedInPanel.style.display = 'flex';
+                userEmail.textContent = user.email || '';
+                updateDebugUser(user);
+                setDebugStatus('Signed in');
+
+                const vehicleFormSection = document.getElementById('vehicleFormSection');
+
+                if (protectedNotice) protectedNotice.classList.add('hidden');
+                if (dashboardPanel) dashboardPanel.classList.remove('hidden');
+                if (vehiclesPanel) vehiclesPanel.classList.remove('hidden');
+                if (vehicleFormSection) vehicleFormSection.classList.remove('hidden');
+
+                if (emailVerifiedBadge) {
+                    emailVerifiedBadge.textContent = user.emailVerified ? 'Email verified' : 'Unverified email';
+                }
+                if (resendVerifyBtn) {
+                    if (user.emailVerified) {
+                        resendVerifyBtn.classList.add('hidden');
+                    } else {
+                        resendVerifyBtn.classList.remove('hidden');
+                    }
+                }
+
+                // Check for legacy data and attach real-time listener to user's vehicles
+                try {
+                    const collectionRef = firebaseDb.collection('users').doc(user.uid).collection('vehicles');
+                    vehiclesUnsubscribe = collectionRef.onSnapshot((snapshot) => {
+                        const vehicles = snapshot.docs.map((d) => ({ id: d.id, ...d.data() }));
+                        localStorage.setItem('vehicles', JSON.stringify(vehicles));
+                        renderVehicles();
+                        showMessage(`Loaded ${vehicles.length} vehicles from cloud`, 'success');
+                    }, (err) => {
+                        console.warn('Vehicle collection snapshot error', err);
+                        setDebugError(err);
+                    });
+
+                    // Detect legacy vehicles array on the user document and surface migrate button in settings
+                    checkLegacyOnUserDoc(user.uid).catch((e) => { /* ignore */ });
+                } catch (err) {
+                    console.error('Failed to attach vehicles listener', err);
+                    setDebugError(err);
+                }
+            } else {
+                signedOutPanel.style.display = 'block';
+                signedInPanel.style.display = 'none';
+                userEmail.textContent = '';
+
+                const vehicleFormSection = document.getElementById('vehicleFormSection');
+                if (vehicleFormSection) vehicleFormSection.classList.add('hidden');
+
+                if (protectedNotice) protectedNotice.classList.remove('hidden');
+                if (dashboardPanel) dashboardPanel.classList.add('hidden');
+                if (vehiclesPanel) vehiclesPanel.classList.add('hidden');
+
+                showMessage('Signed out. You can sign in to sync data across devices.', 'info');
+                updateDebugUser(null);
+                setDebugStatus('Signed out');
+                renderVehicles();
+            }
+        });
     } catch (err) {
         console.warn('Firebase init failed or not configured', err);
         setDebugError(err);
@@ -836,14 +913,40 @@ function summarizeExpenses(vehicles) {
             amount
         }));
 
-    return { totalSpend, byVehicle, months };
+    return { totalSpend, byVehicle, months, monthlyTotals };
 }
 
 function renderDashboard(vehicles) {
     const reminderEntries = collectReminderEntries(vehicles);
     const overdueCount = reminderEntries.filter((entry) => entry.status === "overdue").length;
     const soonCount = reminderEntries.filter((entry) => entry.status === "soon").length;
-    const { totalSpend, byVehicle, months } = summarizeExpenses(vehicles);
+    const { totalSpend, byVehicle, months, monthlyTotals } = summarizeExpenses(vehicles);
+
+    // Compute current month and year spending
+    const now = new Date();
+    const thisMonthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+    let thisMonthTotal = 0;
+    let thisYearTotal = 0;
+    monthlyTotals.forEach((amt, key) => {
+        thisYearTotal += key.startsWith(`${now.getFullYear()}-`) ? amt : 0;
+    });
+    thisMonthTotal = monthlyTotals.get(thisMonthKey) || 0;
+
+    // Vehicle needing attention (first overdue, otherwise first soon)
+    const attentionEntry = reminderEntries.find((e) => e.status === 'overdue') || reminderEntries.find((e) => e.status === 'soon') || null;
+
+    // Most recent service across all vehicles
+    let mostRecentService = null;
+    vehicles.forEach((v) => {
+        v.maintenance.forEach((m) => {
+            if (!m.date) return;
+            const d = new Date(m.date);
+            if (Number.isNaN(d.getTime())) return;
+            if (!mostRecentService || d > new Date(mostRecentService.date)) {
+                mostRecentService = { date: m.date, vehicleName: v.nickname || `${v.year} ${v.make} ${v.model}`, label: m.serviceType || 'Maintenance' };
+            }
+        });
+    });
 
     dashboardSummary.innerHTML = `
         <div class="dashboard-card">
@@ -851,16 +954,24 @@ function renderDashboard(vehicles) {
             <div class="value">${vehicles.length}</div>
         </div>
         <div class="dashboard-card">
-            <span class="muted">Overdue reminders</span>
-            <div class="value">${overdueCount}</div>
+            <span class="muted">Maintenance due soon</span>
+            <div class="value">${overdueCount > 0 ? overdueCount + ' overdue' : (soonCount > 0 ? soonCount + ' soon' : 'None')}< /div>
         </div>
         <div class="dashboard-card">
-            <span class="muted">Upcoming reminders</span>
-            <div class="value">${soonCount}</div>
+            <span class="muted">Spending (This month)</span>
+            <div class="value">${formatCurrency(thisMonthTotal)}</div>
         </div>
         <div class="dashboard-card">
-            <span class="muted">Total spend</span>
-            <div class="value">${formatCurrency(totalSpend)}</div>
+            <span class="muted">Spending (This year)</span>
+            <div class="value">${formatCurrency(thisYearTotal)}</div>
+        </div>
+        <div class="dashboard-card">
+            <span class="muted">Vehicle needing attention</span>
+            <div class="value">${attentionEntry ? escapeHtml(attentionEntry.vehicleName) : 'None'}</div>
+        </div>
+        <div class="dashboard-card">
+            <span class="muted">Most recent service</span>
+            <div class="value">${mostRecentService ? `${escapeHtml(mostRecentService.label)} • ${formatDateString(mostRecentService.date)}` : 'No service yet'}</div>
         </div>
     `;
 
@@ -1138,7 +1249,7 @@ async function migrateVehiclesArrayToSubcollection() {
 // Expose helper for manual invocation from browser console
 window.migrateVehiclesToSubcollection = migrateVehiclesArrayToSubcollection;
 
-// UI hook for migration button
+// UI hook for migration button (legacy main button is hidden in UI; prefer settings modal)
 const migrateBtn = document.getElementById('migrateBtn');
 if (migrateBtn) {
     migrateBtn.addEventListener('click', async () => {
@@ -1157,6 +1268,114 @@ if (migrateBtn) {
             migrateBtn.textContent = 'Migrate legacy data';
         }
     });
+}
+
+// Settings modal and tools
+const settingsBtn = document.getElementById('settingsBtn');
+const settingsModal = document.getElementById('settingsModal');
+const settingsCloseBtn = document.getElementById('settingsCloseBtn');
+const settingsExportJsonBtn = document.getElementById('settingsExportJsonBtn');
+const settingsExportCsvBtn = document.getElementById('settingsExportCsvBtn');
+const settingsMigrateBtn = document.getElementById('settingsMigrateBtn');
+const settingsClearAllBtn = document.getElementById('settingsClearAllBtn');
+
+if (settingsBtn && settingsModal) {
+    settingsBtn.addEventListener('click', () => {
+        settingsModal.classList.remove('hidden');
+    });
+}
+if (settingsCloseBtn) {
+    settingsCloseBtn.addEventListener('click', () => {
+        settingsModal.classList.add('hidden');
+    });
+}
+if (settingsExportJsonBtn) {
+    settingsExportJsonBtn.addEventListener('click', () => {
+        exportJson();
+        showMessage('Export started: JSON', 'success');
+    });
+}
+if (settingsExportCsvBtn) {
+    settingsExportCsvBtn.addEventListener('click', () => {
+        exportCsv();
+        showMessage('Export started: CSV', 'success');
+    });
+}
+if (settingsMigrateBtn) {
+    settingsMigrateBtn.addEventListener('click', async () => {
+        if (!confirm('This will migrate legacy vehicles stored in users/{uid}.vehicles into the vehicles subcollection for the signed-in user. Proceed?')) {
+            return;
+        }
+        settingsMigrateBtn.disabled = true;
+        settingsMigrateBtn.textContent = 'Migrating...';
+        try {
+            await migrateVehiclesArrayToSubcollection();
+        } catch (err) {
+            console.error('Settings migration failed', err);
+            showMessage('Migration failed. See console for details.', 'error');
+        } finally {
+            settingsMigrateBtn.disabled = false;
+            settingsMigrateBtn.textContent = 'Migrate legacy data';
+        }
+    });
+}
+
+if (settingsClearAllBtn) {
+    settingsClearAllBtn.addEventListener('click', async () => {
+        const confirmText = prompt('Type DELETE to confirm clearing all local vehicle data. This action cannot be undone.');
+        if (confirmText !== 'DELETE') {
+            showMessage('Clear aborted.', 'info');
+            return;
+        }
+        // Clear local data
+        localStorage.removeItem('vehicles');
+        resetVehicleForm();
+        renderVehicles();
+        showMessage('All local vehicle data has been removed.', 'success');
+
+        // Offer to clear cloud data if signed in
+        if (firebaseDb && currentUser) {
+            if (confirm('Also delete all cloud-synced vehicle documents for the signed-in account? This is irreversible.')) {
+                try {
+                    const collectionRef = firebaseDb.collection('users').doc(currentUser.uid).collection('vehicles');
+                    const snap = await collectionRef.get();
+                    const batch = firebaseDb.batch();
+                    snap.docs.forEach((d) => batch.delete(d.ref));
+                    await batch.commit();
+                    showMessage('Cloud vehicle documents deleted.', 'success');
+                } catch (err) {
+                    console.error('Failed to delete cloud vehicles', err);
+                    showMessage('Failed to delete cloud vehicles. See console for details.', 'error');
+                }
+            }
+        }
+    });
+}
+
+// Check for legacy vehicles array on user doc and show migrate button when appropriate
+async function checkLegacyOnUserDoc(uid) {
+    try {
+        if (!firebaseDb || !uid) return false;
+        const userDocRef = firebaseDb.collection('users').doc(uid);
+        const doc = await userDocRef.get();
+        if (!doc.exists) return false;
+        const data = doc.data() || {};
+        const hasLegacy = Array.isArray(data.vehicles) && data.vehicles.length > 0;
+        if (hasLegacy && settingsMigrateBtn) {
+            settingsMigrateBtn.classList.remove('hidden');
+        } else if (settingsMigrateBtn) {
+            // Show migrate in dev mode for convenience
+            if (isDevMode()) {
+                settingsMigrateBtn.classList.remove('hidden');
+            } else {
+                settingsMigrateBtn.classList.add('hidden');
+            }
+        }
+        return hasLegacy;
+    } catch (err) {
+        console.warn('Legacy check failed', err);
+        return false;
+    }
 }
 
 // Debug panel close button
