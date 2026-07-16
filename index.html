@@ -12,9 +12,10 @@
             <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;">
                 <div>
                     <h1>Wrench Wallet</h1>
-                    <p>Track vehicles, maintenance, reminders, and export your data in one place.</p>
+                        <p>WrenchWallet is a cloud-synced vehicle ownership and maintenance tracker for managing service history, expenses, reminders, and important vehicle records.</p>
                 </div>
                 <div id="authPanel">
+                        <button id="settingsBtn" class="button secondary" style="margin-right:8px;">Settings</button>
                     <div id="signedOutPanel">
                         <input id="authEmail" type="email" placeholder="you@example.com" style="padding:8px;border-radius:8px;border:1px solid rgba(255,255,255,0.08);margin-right:8px;">
                         <input id="authPassword" type="password" placeholder="password" style="padding:8px;border-radius:8px;border:1px solid rgba(255,255,255,0.08);margin-right:8px;">
@@ -34,7 +35,7 @@
             <a class="hero-link" href="https://github.com/PhoenixBoxedYou/WrenchWallet" target="_blank" rel="noreferrer">View project on GitHub</a>
         </header>
 
-        <section class="panel">
+        <section id="vehicleFormSection" class="panel hidden">
             <div class="panel-header">
                 <div>
                     <h2>Vehicle Details</h2>
@@ -100,10 +101,11 @@
             <div class="form-actions">
                 <button id="saveVehicleBtn">Save Vehicle</button>
                 <button id="cancelEditBtn" class="secondary hidden">Cancel Edit</button>
-                <button id="exportJsonBtn" class="secondary">Export JSON</button>
-                <button id="exportCsvBtn" class="secondary">Export CSV</button>
-                <button id="migrateBtn" class="secondary" title="Migrate legacy users/{uid}.vehicles array to subcollection">Migrate legacy data</button>
-                <button id="clearAllBtn" class="secondary danger">Clear All Data</button>
+                <!-- Data and admin tools moved to Settings modal -->
+                <button id="exportJsonBtn" class="secondary hidden">Export JSON</button>
+                <button id="exportCsvBtn" class="secondary hidden">Export CSV</button>
+                <button id="migrateBtn" class="secondary hidden" title="Migrate legacy users/{uid}.vehicles array to subcollection">Migrate legacy data</button>
+                <button id="clearAllBtn" class="secondary danger hidden">Clear All Data</button>
             </div>
 
             <div id="formMessage" class="message"></div>
@@ -112,8 +114,23 @@
         <div id="protectedNotice" class="panel hidden">
             <div class="panel-header">
                 <div>
-                    <h2>Sign in to view your dashboard</h2>
-                    <p>Please sign in to access your maintenance dashboard and saved vehicles. Your data will sync across devices when signed in.</p>
+                    <h2>Welcome to WrenchWallet</h2>
+                    <p>Sign in to sync your vehicles across devices and access your personal maintenance dashboard. WrenchWallet helps you track service history, spending, and upcoming reminders so you never miss important maintenance.</p>
+                </div>
+            </div>
+            <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:center;margin-top:12px;">
+                <div style="flex:1;min-width:240px;">
+                    <h3 style="margin-top:0;margin-bottom:8px;">What you get</h3>
+                    <ul style="margin:0;padding-left:20px;color:var(--text-muted);">
+                        <li>Cloud-synced vehicles and maintenance records</li>
+                        <li>Service reminders based on date and mileage</li>
+                        <li>Spending overview and export tools</li>
+                        <li>Easy migration from older storage formats (when detected)</li>
+                    </ul>
+                </div>
+                <div style="min-width:220px;text-align:center;">
+                    <p style="margin:0 0 8px;color:var(--text-muted)">New here? Create an account or sign in to get started.</p>
+                    <div id="landingActions"></div>
                 </div>
             </div>
         </div>
@@ -153,6 +170,20 @@
     <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
     <!-- Optional: create firebase-config.js from firebase-config.example.js with your config -->
     <script src="firebase-config.js"></script>
+
+    <div id="settingsModal" class="panel hidden" style="position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);width:min(760px,95%);z-index:10000;box-shadow:var(--shadow);">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+            <h3 style="margin:0;">Settings & Data Tools</h3>
+            <button id="settingsCloseBtn" class="button secondary">Close</button>
+        </div>
+        <p style="margin-top:0;color:var(--text-muted);">Export your data, manage legacy migration (appears only when legacy data is detected), or clear local data. Clear All Data is destructive and requires confirmation.</p>
+        <div style="display:flex;gap:12px;flex-wrap:wrap;margin-top:12px;">
+            <button id="settingsExportJsonBtn" class="button">Export JSON</button>
+            <button id="settingsExportCsvBtn" class="button secondary">Export CSV</button>
+            <button id="settingsMigrateBtn" class="button secondary hidden" title="Migrate legacy users/{uid}.vehicles array to subcollection">Migrate legacy data</button>
+            <button id="settingsClearAllBtn" class="button danger">Clear All Data</button>
+        </div>
+    </div>
 
     <div id="debugPanel" class="debug-panel hidden">
         <div class="debug-header">Debug <button id="debugCloseBtn" title="Hide debug">×</button></div>
